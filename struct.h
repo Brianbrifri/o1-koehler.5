@@ -56,4 +56,11 @@ typedef struct PCB {
   long long createTime;
 } PCB;
 
+typedef struct resource {
+  int type;
+  int quantity;
+  int request;
+  int release;
+} resource;
+
 #endif
