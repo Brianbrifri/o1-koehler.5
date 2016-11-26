@@ -33,6 +33,7 @@ void cleanup(void);
 void sendMessage(int, int);
 int detachAndRemoveTimer(int, sharedStruct*);
 int detachAndRemoveArray(int, PCB*);
+int detachAndRemoveResource(int, resource*);
 void printHelpMessage(void);
 void printShortHelpMessage(void);
 
@@ -43,7 +44,8 @@ struct option long_options[] = {
 };
 
 //PCB Array//
-struct PCB *pcbArray;
+PCB *pcbArray;
+resource *resourceArray;
 
 //Begin queue stuff//
 
@@ -92,6 +94,7 @@ int sValue = 3;
 int status;
 int shmid;
 int pcbShmid;
+int resourceShmid;
 int slaveQueueId;
 int masterQueueId;
 int nextProcessToSend = 1;
@@ -120,5 +123,6 @@ struct msqid_ds msqid_ds_buf;
 
 key_t timerKey = 148364;
 key_t pcbArrayKey = 135155;
+key_t resourceKey = 131581;
 key_t masterQueueKey = 128464;
 #endif

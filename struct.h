@@ -35,6 +35,7 @@
 #define LTBLUDIM "\x1b[94;2m"
 #define REPORT "\x1b[48;5;39m"
 static const long long NANO_MODIFIER = 1000000000;
+static const int INFINITE = -5;
 
 typedef struct sharedStruct {
   long long ossTimer;
@@ -59,6 +60,7 @@ typedef struct PCB {
 typedef struct resource {
   int type;
   int quantity;
+  int quantAvail;
   int request;
   int release;
 } resource;

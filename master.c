@@ -94,6 +94,7 @@ int main (int argc, char **argv)
   alarm(tValue);
 
   int sizeArray = sizeof(*pcbArray) * 18;
+  int sizeResource = sizeof(*resourceArray) * 20;
 
   //Try to get the shared mem id from the key with a size of the struct
   //create it with all perms
@@ -117,6 +118,16 @@ int main (int argc, char **argv)
   //try to attach pcb array to shared memory
   if((pcbArray = (struct PCB *)shmat(pcbShmid, NULL, 0)) == (void *) -1) {
     perror("Master could not attach to pcb array");
+    exit(-1);
+  }
+
+  if((resourceShmid = shmget(resourceKey, sizeResource, IPC_CREAT | 0777)) == -1) {
+    perror("Bad shmget allocation resource array");
+    exit(-1);
+  }
+
+  if((resourceArray = (struct resource *)shmat(resourceShmid, NULL, 0)) == (void *) -1) {
+    perror("Master could not attach to resource array");
     exit(-1);
   }
 
@@ -620,11 +631,15 @@ void cleanup() {
 
   //Detach and remove the shared memory after all child process have died
   if(detachAndRemoveTimer(shmid, myStruct) == -1) {
-    perror("Failed to destroy shared memory segment");
+    perror("Failed to destroy shared messageQ shared mem seg");
   }
 
   if(detachAndRemoveArray(pcbShmid, pcbArray) == -1) {
-    perror("Failed to destroy shared memory segment");
+    perror("Failed to destroy shared pcb shared mem seg");
+  }
+
+  if(detachAndRemoveResource(resourceShmid, resourceArray) == -1) {
+    perror("Faild to destroy resource shared mem seg");
   }
 
   clearQueues();
@@ -696,6 +711,23 @@ int detachAndRemoveTimer(int shmid, sharedStruct *shmaddr) {
 
 //Detach and remove function
 int detachAndRemoveArray(int shmid, PCB *shmaddr) {
+  printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
+  int error = 0;
+  if(shmdt(shmaddr) == -1) {
+    error = errno;
+  }
+  if((shmctl(shmid, IPC_RMID, NULL) == -1) && !error) {
+    error = errno;
+  }
+  if(!error) {
+    return 0;
+  }
+
+  return -1;
+}
+
+//Detach and remove function
+int detachAndRemoveResource(int shmid, resource *shmaddr) {
   printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
   int error = 0;
   if(shmdt(shmaddr) == -1) {

@@ -1,1 +1,4 @@
 *.o
+slaverunner
+oss
+*.out
