@@ -1,6 +1,5 @@
 
 #include "slave.h"
-#include "struct.h"
 
 int main (int argc, char **argv) {
   int timeoutValue = 30;
@@ -11,11 +10,12 @@ int main (int argc, char **argv) {
 
   int shmid = 0;
   int pcbShmid = 0;
+  int resourceShmid = 0;
 
   char *fileName;
   char *defaultFileName = "test.out";
   char *option = NULL;
-  char *short_options = "l:m:n:p:t:";
+  char *short_options = "l:m:n:p:r:t:";
   FILE *file;
   int c;
   myPid = getpid();
@@ -36,6 +36,9 @@ int main (int argc, char **argv) {
       case 'p':
         pcbShmid = atoi(optarg);
         break;
+      case 'r':
+        resourceShmid = atoi(optarg);
+        break;
       case 't':
         timeoutValue = atoi(optarg) + 2;
         break;
@@ -54,6 +57,11 @@ int main (int argc, char **argv) {
 
   if((pcbArray = (PCB *)shmat(pcbShmid, NULL, 0)) == (void *) -1) {
     perror("    Slave could not attach to shared memory array");
+    exit(1);
+  }
+
+  if((resourceArray = (resource *)shmat(resourceShmid, NULL, 0)) == (void *) -1) {
+    perror("    Slave could not attach to resource shared mem seg");
     exit(1);
   }
 
@@ -87,38 +95,30 @@ int main (int argc, char **argv) {
 
   do {
   
-    while(myStruct->scheduledProcess != getpid() && myStruct->sigNotReceived);
-
-    if(willBlockIO() == 1) {
-      duration = getPartialQuantum(); 
-    }
-    else {
-      duration = pcbArray[processNumber].priority;
-    }
-
-    pcbArray[processNumber].lastBurst = duration;
-    pcbArray[processNumber].totalTimeRan += duration;
-
-
-
-    if(pcbArray[processNumber].totalTimeRan >= pcbArray[processNumber].totalScheduledTime) {
-      duration -= (pcbArray[processNumber].totalTimeRan - pcbArray[processNumber].totalScheduledTime);
-      pcbArray[processNumber].totalTimeRan = pcbArray[processNumber].totalScheduledTime;
-      notFinished = 0; 
-      pcbArray[processNumber].processID = 0;
+    if(pcbArray[processNumber].request == -1) {
+      if(willTerminate()) {
+        notFinished = 0;
+      }
+      else {
+        if(takeAction()) {
+          int choice = rand() % 2;
+          if(choice) {
+            pcbArray[processNumber].request = chooseResource(); 
+            sendMessage(masterQueueId, 3);
+          }
+          else {
+            pcbArray[processNumber].release = 1;
+            sendMessage(masterQueueId, 3);
+          }
+        }
+      }
     }
 
-    printf("    Slave %s%d%s:%s%d%s ran for quantum %s%llu.%09llu out of %llu.%09llu%s\n", BBU, myPid, NRM, RBU, processNumber, NRM, CYAN, duration / NANO_MODIFIER, duration % NANO_MODIFIER, pcbArray[processNumber].priority / NANO_MODIFIER, pcbArray[processNumber].priority % NANO_MODIFIER, NRM);
-
-    myStruct->ossTimer += duration;
-    
-    sendMessage(masterQueueId, 3);
-
-    myStruct->scheduledProcess = -1;
-
-    printf("    Slave %s%d%s:%s%d%s has ran for a total of %s%llu.%09llu out of %llu.%09llu%s\n", BBU, myPid, NRM, RBU, processNumber, NRM, MBU, pcbArray[processNumber].totalTimeRan / NANO_MODIFIER, pcbArray[processNumber].totalTimeRan % NANO_MODIFIER, pcbArray[processNumber].totalScheduledTime / NANO_MODIFIER, pcbArray[processNumber].totalScheduledTime % NANO_MODIFIER, NRM);
   
   } while (notFinished && myStruct->sigNotReceived);
+
+  pcbArray[processNumber].processID = 0;
+  sendMessage(masterQueueId, 3);
 
   if(shmdt(myStruct) == -1) {
     perror("    Slave could not detach shared memory struct");
@@ -126,6 +126,10 @@ int main (int argc, char **argv) {
 
   if(shmdt(pcbArray) == -1) {
     perror("    Slave could not detach from shared memory array");
+  }
+
+  if(shmdt(resourceArray) == -1) {
+    perror("    Slave could not detach from resource array");
   }
 
   printf("    %sSlave%s %s%d%s%s exiting%s\n", RED, NRM, RBU, processNumber, NRM, RED, NRM);
@@ -137,12 +141,22 @@ int main (int argc, char **argv) {
 
 }
 
-int willBlockIO(void) {
-  return 1 + rand() % 5;
+int willTerminate(void) {
+  if(myStruct->ossTimer - pcbArray[processNumber].createTime >= NANO_MODIFIER) {
+    int choice = 1 + rand() % 5;
+    return choice == 1 ? 1 : 0;
+  }
+  return 0;
 }
 
-long long getPartialQuantum(void) {
-  return rand() % pcbArray[processNumber].priority + 1;
+int chooseResource(void) {
+  int choice = rand() % 20;
+  return resourceArray[choice].type;
+}
+
+int takeAction(void) {
+  int choice = rand() % 20;
+  return choice == 1 ? 1 : 0;
 }
 
 void sendMessage(int qid, int msgtype) {
@@ -154,35 +168,23 @@ void sendMessage(int qid, int msgtype) {
   if(msgsnd(qid, (void *) &msg, sizeof(msg.mText), IPC_NOWAIT) == -1) {
     perror("    Slave msgsnd error");
   }
-
 }
-
-
-
-
-void getMessage(int qid, int msgtype) {
-  struct msgbuf msg;
-
-  if(msgrcv(qid, (void *) &msg, sizeof(msg.mText), msgtype, MSG_NOERROR) == -1) {
-    if(errno != ENOMSG) {
-      perror("    Slave msgrcv");
-    }
-    printf("    Slave: No message available for msgrcv()\n");
-  }
-  else {
-    printf("    Message received by slave #%d: %s", processNumber, msg.mText);
-  }
-}
-
 
 //This handles SIGQUIT being sent from parent process
 //It sets the volatile int to 0 so that it will not enter in the CS.
 void sigquitHandler(int sig) {
   printf("    Slave %s%d%s has received signal %s (%d)\n", RBU, processNumber, NRM, strsignal(sig), sig);
-  sigNotReceived = 0;
 
   if(shmdt(myStruct) == -1) {
     perror("    Slave could not detach shared memory");
+  }
+
+  if(shmdt(pcbArray) == -1) {
+    perror("    Slave could not detach from shared memory array");
+  }
+
+  if(shmdt(resourceArray) == -1) {
+    perror("    Slave could not detach from resource array");
   }
 
   kill(myPid, SIGKILL);

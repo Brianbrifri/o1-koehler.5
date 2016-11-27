@@ -15,14 +15,14 @@
 #include <signal.h>
 #include <errno.h>
 #include <time.h>
-int willBlockIO(void);
-long long getPartialQuantum(void);
+#include "struct.h"
+int willTerminate(void);
 void sendMessage(int, int);
-void getMessage(int, int);
+int chooseResource(void);
+int takeAction(void);
 void alarmHandler(int);
 void sigquitHandler(int);
 void zombieKiller(int);
-volatile sig_atomic_t sigNotReceived = 1;
 pid_t myPid;
 long long *ossTimer;
 struct sharedStruct *myStruct;
@@ -31,4 +31,5 @@ int masterQueueId;
 const int QUIT_TIMEOUT = 10;
 struct msqid_ds msqid_buf;
 struct PCB *pcbArray;
+resource *resourceArray;
 #endif

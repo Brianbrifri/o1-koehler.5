@@ -22,12 +22,10 @@ void spawnSlave(void);
 bool isTimeToSpawn(void);
 void setTimeToSpawn(void);
 int incrementTimer(void);
-long long getProcessPriority(void);
-int scheduleProcessTime(void);
 void updateAverageTurnaroundTime(int);
-pid_t scheduleNextProcess(void);
-int waitForTurn(void);
+int processSystem(void);
 void updateAfterProcessFinish(int);
+void setupResources(void);
 void interruptHandler(int);
 void cleanup(void);
 void sendMessage(int, int);
@@ -47,43 +45,11 @@ struct option long_options[] = {
 PCB *pcbArray;
 resource *resourceArray;
 
-//Begin queue stuff//
-
-struct queue {
-  pid_t id;
-  struct queue *next;
-
-} *front0, *front1, *front2, *front3,
-  *rear0, *rear1, *rear2, *rear3,
-  *temp0, *temp1, *temp2, *temp3,
-  *frontA0, *frontA1, *frontA2, *frontA3;
-
-int queue0size;
-int queue1size;
-int queue2size;
-int queue3size;
-
-const long long queuePriorityHigh = 40000000;
-const long long queuePriorityNormal_1 = 30000000;
-const long long queuePriorityNormal_2 = 60000000;
-const long long queuePriorityNormal_3 = 120000000;
-
-void createQueues(void);
-bool isEmpty(int);
-void Enqueue(pid_t, int);
-pid_t pop(int);
-void clearQueues(void);
-
-const int QUEUE0 = 0;
-const int QUEUE1 = 1;
-const int QUEUE2 = 2;
-const int QUEUE3 = 3;
-
-//End Queue Stuff//
 //Char arrays for arg passing to children//
 char *mArg;
 char *nArg;
 char *pArg;
+char *rArg;
 char *tArg;
 
 volatile sig_atomic_t cleanupCalled = 0;

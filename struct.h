@@ -48,12 +48,17 @@ typedef struct msgbuf {
   char mText[80];
 } msgbuf;
 
+typedef struct resourceAlloc {
+  int type[20];
+  int quantity[20];
+} resourceAlloc;
+
 typedef struct PCB {
   pid_t processID;
-  long long totalScheduledTime;
+  int request;
+  int release;
+  resourceAlloc allocation;
   long long totalTimeRan;
-  long long lastBurst;
-  long long priority;
   long long createTime;
 } PCB;
 
@@ -61,8 +66,5 @@ typedef struct resource {
   int type;
   int quantity;
   int quantAvail;
-  int request;
-  int release;
 } resource;
-
 #endif

@@ -6,6 +6,7 @@ int main (int argc, char **argv)
   mArg = malloc(20);
   nArg = malloc(20);
   pArg = malloc(20);
+  rArg = malloc(20);
   tArg = malloc(20);
   int hflag = 0;
   int nonOptArgFlag = 0;
@@ -141,11 +142,15 @@ int main (int argc, char **argv)
   int i;
   for (i = 0; i < ARRAY_SIZE; i++) {
     pcbArray[i].processID = 0;
-    pcbArray[i].priority = 0;
-    pcbArray[i].totalScheduledTime = 0;
-    pcbArray[i].lastBurst = 0;
+    pcbArray[i].request = -1;
+    pcbArray[i].release = -1;
     pcbArray[i].totalTimeRan = 0;
     pcbArray[i].createTime = 0;
+    int j;
+    for(j = 0; j < 20; j++) {
+      pcbArray[i].allocation.type[j] = -1;
+      pcbArray[i].allocation.quantity[j] = 0;
+    }
   }
 
   //Open file and mark the beginning of the new log
@@ -156,10 +161,7 @@ int main (int argc, char **argv)
   }
 
   myStruct->ossTimer = 0;
-  myStruct->scheduledProcess = -1;
   myStruct->sigNotReceived = 1;
-
-  createQueues();
 
   fprintf(file,"***** BEGIN LOG *****\n");
 
@@ -171,14 +173,9 @@ int main (int argc, char **argv)
       setTimeToSpawn();
     }
 
-    myStruct->scheduledProcess = scheduleNextProcess();
+    myStruct->ossTimer += incrementTimer();
 
-    tempIncrement = incrementTimer();
-    idleTime += tempIncrement;
-    myStruct->ossTimer += tempIncrement;
-    printf("until %s%llu.%09llu%s\n", TIMER, myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER, NRM);
-
-    updateAfterProcessFinish(waitForTurn());
+    updateAfterProcessFinish(processSystem());
   
   } while (myStruct->ossTimer < MAX_TIME && myStruct->sigNotReceived);
 
@@ -231,30 +228,18 @@ void spawnSlave(void) {
       //If good fork, continue to call exec with all the necessary args
       if(childPid == 0) {
         printf("Total processes spawned: %d\n", totalProcessesSpawned);
-        pcbArray[processNumberBeingSpawned].priority = getProcessPriority();
-        pcbArray[processNumberBeingSpawned].totalScheduledTime = scheduleProcessTime();
         pcbArray[processNumberBeingSpawned].createTime = myStruct->ossTimer;
         pcbArray[processNumberBeingSpawned].processID = getpid();
-        printf("Process %s%d%s at location %s%d%s was scheduled for duration %s%llu.%09llu%s at time %s%llu.%09llu%s\n", BBU, getpid(), NRM, RBU, processNumberBeingSpawned, NRM, YBU, pcbArray[processNumberBeingSpawned].totalScheduledTime / NANO_MODIFIER, pcbArray[processNumberBeingSpawned].totalScheduledTime % NANO_MODIFIER, NRM, TIMER, myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER, NRM);
-        fprintf(file, "Process %d at location %d was scheduled for duration %llu\n", getpid(), processNumberBeingSpawned, pcbArray[processNumberBeingSpawned].totalScheduledTime);
         sprintf(mArg, "%d", shmid);
         sprintf(nArg, "%d", processNumberBeingSpawned);
         sprintf(pArg, "%d", pcbShmid);
+        sprintf(rArg, "%d", resourceShmid);
         sprintf(tArg, "%d", tValue);
-        char *slaveOptions[] = {"./slaverunner", "-m", mArg, "-n", nArg, "-p", pArg, "-t", tArg, (char *)0};
+        char *slaveOptions[] = {"./slaverunner", "-m", mArg, "-n", nArg, "-p", pArg, "-r", rArg, "-t", tArg, (char *)0};
         execv("./slaverunner", slaveOptions);
         fprintf(stderr, "    Should only print this in error\n");
       }
       
-    }
-    if(processNumberBeingSpawned != -1) {
-      while(pcbArray[processNumberBeingSpawned].processID <= 1); 
-      if(pcbArray[processNumberBeingSpawned].priority == queuePriorityHigh) {
-        Enqueue(pcbArray[processNumberBeingSpawned].processID, QUEUE0);
-      }
-      else {
-        Enqueue(pcbArray[processNumberBeingSpawned].processID, QUEUE1);
-      }
     }
 }
 
@@ -262,23 +247,11 @@ void spawnSlave(void) {
 
 int incrementTimer(void) {
   int random = 1 + rand() % MAX_IDLE_INCREMENT;
-  printf("Spent %s%d%s in master ", IDLE, random, NRM);
   return random;
 }
 
-int scheduleProcessTime(void) {
-  return 1 + rand() % MAX_TOTAL_PROCESS_TIME;
-}
-
-long long getProcessPriority(void) {
-  int random = rand() % CHANCE_HIGH_PRIORITY;
-  return random == 1 ? queuePriorityHigh : queuePriorityNormal_1;
-}
-
-int waitForTurn(void) {
+int processSystem(void) {
   struct msgbuf msg;
-
-  while(myStruct->scheduledProcess != -1);
 
   if(msgrcv(masterQueueId, (void *) &msg, sizeof(msg.mText), 3, IPC_NOWAIT) == -1) {
     if(errno != ENOMSG) {
@@ -290,10 +263,6 @@ int waitForTurn(void) {
   }
   else {
     int processNum = atoi(msg.mText);
-    printf("Message from %s%d%s:%s%d%s at time %s%llu.%09llu%s\n", BBU, pcbArray[processNum].processID, NRM, RBU, processNum, NRM, TIMER, myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER, NRM);
-    fprintf(file, "Message from %d:%d at time %llu\n", pcbArray[processNum].processID, processNum, myStruct->ossTimer);
-    fprintf(file, "    Slave %d:%d got duration %llu out of %llu\n", pcbArray[processNum].processID, processNum, pcbArray[processNum].lastBurst, pcbArray[processNum].priority);
-    fprintf(file, "    Slave %d:%d has ran for a total of %llu out of %llu\n", pcbArray[processNum].processID, processNum, pcbArray[processNum].totalTimeRan, pcbArray[processNum].totalScheduledTime);
     return processNum;
   }
 }
@@ -302,291 +271,103 @@ void updateAverageTurnaroundTime(int pcb) {
 
   long long startToFinish = myStruct->ossTimer - pcbArray[pcb].createTime;
   totalProcessLifeTime += startToFinish;
-  processWaitTime += startToFinish - pcbArray[pcb].totalScheduledTime;
 }
 
 void updateAfterProcessFinish(int processLocation) {
 
+  //If no message received, no process performed any actions this check. Return.
   if(processLocation == -1) {
     return;
   }
 
   pid_t id = pcbArray[processLocation].processID;
-  long long lastBurst = pcbArray[processLocation].lastBurst;
-  long long priority = pcbArray[processLocation].priority;
 
+  //If you made it here and the processID is not 0, check for either a 
+  //request or release
   if(id != 0) {
-    if(priority == queuePriorityHigh) {
-      Enqueue(id, QUEUE0);
-      return;
+    int request = pcbArray[processLocation].request;
+    int release = pcbArray[processLocation].release;
+    //If request flag is set, try to give that process the requested resource
+    if(request > -1) {
+      //If there are available resources, allocate them
+      if(resourceArray[request].quantAvail > 0) {
+        pcbArray[processLocation].request = -1;
+        resourceArray[request].quantAvail -= 1;
+        int i;
+        int openSpace = -1;
+        int foundExisting = 0;
+        //See if the process already has that resource, if so, just update the quantity
+        for(i = 0; i < 20; i++) {
+          if(pcbArray[processLocation].allocation.type[i] == request) {
+            pcbArray[processLocation].allocation.quantity[i] += 1; 
+            foundExisting = 1;
+            break;
+          }
+          //Set the openSpace var to the first available openSpace
+          else {
+            if(openSpace == -1) {
+              openSpace = i;
+            } 
+          }
+        }
+        //Otherwise, give it a new resource
+        if(!foundExisting) {
+          pcbArray[processLocation].allocation.type[openSpace] = request;
+          pcbArray[processLocation].allocation.quantity[openSpace] += 1; 
+        }
+      } 
     }
-    else if(lastBurst < priority) {
-      pcbArray[processLocation].priority = queuePriorityNormal_1;
-      Enqueue(id, QUEUE1);
-      return;
+    //If the release flag was set, release on of the selected resources
+    //and put it back in the resource array
+    if(release > -1) {
+      pcbArray[processLocation].allocation.quantity[release] -= 1;
+      resourceArray[release].quantAvail += 1;
+      //If that was the last resource allocated to the process
+      //set the type to -1
+      if(pcbArray[processLocation].allocation.quantity[release] == 0) {
+         pcbArray[processLocation].allocation.type[release] = -1;
+      }
     }
-    else {
-      if(priority == queuePriorityNormal_1) {
-        pcbArray[processLocation].priority = queuePriorityNormal_2;
-        Enqueue(id, QUEUE2);
-        return;
-      }
-      else if(priority == queuePriorityNormal_2) {
-        pcbArray[processLocation].priority = queuePriorityNormal_3;
-        Enqueue(id, QUEUE3);
-        return;
-      }
-      else if(priority == queuePriorityNormal_3) {
-        pcbArray[processLocation].priority = queuePriorityNormal_3;
-        Enqueue(id, QUEUE3);
-        return;
-      }
-      else {
-        printf("Unhandled priority exception\n");
-      
-      }
-
-    }
- 
   }
+  //If the processID is 0, then it is no longer running. Proceed with cleanup
   else {
     printf("%sProcess completed its time%s\n", GRN, NRM);
     fprintf(file, "Process completed its time\n");
+    int i;
+    int resource;
+    //Go through all the allocations to the dead process and put them back into the
+    //resource array
+    for(i = 0; i < 20; i++) {
+      if((resource = pcbArray[processLocation].allocation.type[i]) != -1) {
+        resourceArray[resource].quantAvail += pcbArray[processLocation].allocation.quantity[i];
+        pcbArray[processLocation].allocation.type[i] = -1;
+        pcbArray[processLocation].allocation.quantity[i] = 0;
+      } 
+    }
     updateAverageTurnaroundTime(processLocation);
-    pcbArray[processLocation].totalScheduledTime = 0;
-    pcbArray[processLocation].lastBurst = 0;
     pcbArray[processLocation].totalTimeRan = 0;
     pcbArray[processLocation].createTime = 0;
+    pcbArray[processLocation].request = -1;
+    pcbArray[processLocation].release = -1;
   }
 
 }
 
-pid_t scheduleNextProcess(void) {
-  if(!isEmpty(QUEUE0)) {
-    return pop(QUEUE0);
+void setupResources(void) {
+  int i;
+  for(i = 0; i < 20; i++) {
+    resourceArray[i].type = i; 
+    resourceArray[i].quantity = 1 + rand() % 10;
+    resourceArray[i].quantAvail = resourceArray[i].quantity;
   }
-  else if(!isEmpty(QUEUE1)) {
-    return pop(QUEUE1);
+
+  int numShared = 3 + rand() % 3;
+
+  for(i = 0; i < numShared; i++) {
+    int choice = rand() % 20;
+    resourceArray[choice].quantity = 9999;
+    resourceArray[choice].quantAvail = 9999;
   }
-  else if(!isEmpty(QUEUE2)) {
-    return pop(QUEUE2);
-  }
-  else if(!isEmpty(QUEUE3)) {
-    return pop(QUEUE3);
-  }
-  else return -1;
-}
-
-//Set queue pointers to null
-void createQueues() {
-  front0 = front1 = front2 = front3 = NULL;
-  rear0 = rear1 = rear2 = rear3 = NULL;
-  queue0size = queue1size = queue2size = queue3size = 0;
-}
-
-//Function to check if a queue is empty
-bool isEmpty(int choice) {
-  switch(choice) {
-    case 0:
-      if((front0 == NULL) && (rear0 == NULL))
-        return true;
-      break;
-    case 1:
-      if((front1 == NULL) && (rear1 == NULL))
-        return true;
-      break;
-    case 2:
-      if((front2 == NULL) && (rear2 == NULL))
-        return true;
-      break;
-    case 3:
-      if((front3 == NULL) && (rear3 == NULL))
-        return true;
-      break;
-    default:
-      printf("Not a valid queue choice\n");
-  }
-  return false;
-}
-
-//Function to add a process id to a given queue
-void Enqueue(pid_t processId, int choice) {
-  fprintf(file, "Enqueuing pid %d in queue %d\n", processId, choice);
-  switch(choice) {
-    case 0:
-      printf("Enqueuing pid %s%d%s in queue %s%d%s\n", BBU, processId, NRM, Q0, choice, NRM);
-      if(rear0 == NULL) {
-        rear0 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear0->next = NULL;
-        rear0->id = processId;
-        front0 = rear0;
-      }
-      else {
-        temp0 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear0->next = temp0;
-        temp0->id = processId;
-        temp0->next = NULL;
-
-        rear0 = temp0;
-      }
-      queue0size++;
-      break;
-    case 1:
-      printf("Enqueuing pid %s%d%s in queue %s%d%s\n", BBU, processId, NRM, Q1, choice, NRM);
-      if(rear1 == NULL) {
-        rear1 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear1->next = NULL;
-        rear1->id = processId;
-        front1 = rear1;
-      }
-      else {
-        temp1 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear1->next = temp1;
-        temp1->id = processId;
-        temp1->next = NULL;
-
-        rear1 = temp1;
-      }
-      queue1size++;
-      break;
-    case 2:
-      printf("Enqueuing pid %s%d%s in queue %s%d%s\n", BBU, processId, NRM, Q2, choice, NRM);
-      if(rear2 == NULL) {
-        rear2 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear2->next = NULL;
-        rear2->id = processId;
-        front2 = rear2;
-      }
-      else {
-        temp2 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear2->next = temp2;
-        temp2->id = processId;
-        temp2->next = NULL;
-
-        rear2 = temp2;
-      }
-      queue2size++;
-      break;
-    case 3:
-      printf("Enqueuing pid %s%d%s in queue %s%d%s\n", BBU, processId, NRM, Q3, choice, NRM);
-      if(rear3 == NULL) {
-        rear3 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear3->next = NULL;
-        rear3->id = processId;
-        front3 = rear3;
-      }
-      else {
-        temp3 = (struct queue*)malloc(1 * sizeof(struct queue));
-        rear3->next = temp3;
-        temp3->id = processId;
-        temp3->next = NULL;
-
-        rear3 = temp3;
-      }
-      queue3size++;
-      break;
-    default:
-      printf("Not a valid queue choice\n");
-  }
-}
-
-//function to pop the process id for a given queue
-pid_t pop(int choice) {
-  pid_t poppedID;
-  switch(choice) {
-    case 0:
-      frontA0 = front0;
-      if(frontA0 == NULL) {
-        printf("Error: popping an empty queue\n");
-      }
-      else {
-        if(frontA0->next != NULL) {
-          frontA0 = frontA0->next;
-          poppedID = front0->id;
-          free(front0);
-          front0 = frontA0;
-        }
-        else {
-          poppedID = front0->id;
-          free(front0);
-          front0 = NULL;
-          rear0 = NULL;
-        }
-        printf("Got pid %s%d%s from queue %s%d%s\n", BBU, poppedID, NRM, Q0, choice, NRM);
-        queue0size--;
-      }
-      break;
-    case 1:
-      frontA1 = front1;
-      if(frontA1 == NULL) {
-        printf("Error: popping an empty queue\n");
-      }
-      else {
-        if(frontA1->next != NULL) {
-          frontA1 = frontA1->next;
-          poppedID = front1->id;
-          free(front1);
-          front1 = frontA1;
-        }
-        else {
-          poppedID = front1->id;
-          free(front1);
-          front1 = NULL;
-          rear1 = NULL;
-        }
-        printf("Got pid %s%d%s from queue %s%d%s\n", BBU, poppedID, NRM, Q1, choice, NRM);
-        queue1size--;
-      }
-      break;
-    case 2:
-      frontA2 = front2;
-      if(frontA2 == NULL) {
-        printf("Error: popping an empty queue\n");
-      }
-      else {
-        if(frontA2->next != NULL) {
-          frontA2 = frontA2->next;
-          poppedID = front2->id;
-          free(front2);
-          front2 = frontA2;
-        }
-        else {
-          poppedID = front2->id;
-          free(front2);
-          front2 = NULL;
-          rear2 = NULL;
-        }
-        printf("Got pid %s%d%s from queue %s%d%s\n", BBU, poppedID, NRM, Q2, choice, NRM);
-        queue2size--;
-      }
-      break;
-    case 3:
-      frontA3 = front3;
-      if(frontA3 == NULL) {
-        printf("Error: popping an empty queue\n");
-      }
-      else {
-        if(frontA3->next != NULL) {
-          frontA3 = frontA3->next;
-          poppedID = front3->id;
-          free(front3);
-          front3 = frontA3;
-        }
-        else {
-          poppedID = front3->id;
-          free(front3);
-          front3 = NULL;
-          rear3 = NULL;
-        }
-        printf("Got pid %s%d%s from queue %s%d%s\n", BBU, poppedID, NRM, Q3, choice, NRM);
-        queue3size--;
-      }
-      break;
-    default:
-      printf("Not a valid queue choice\n");
-  }
-  fprintf(file, "Got pid %d from queue %d\n", poppedID, choice);
-  return poppedID;
 }
 
 //Interrupt handler function that calls the process destroyer
@@ -625,6 +406,7 @@ void cleanup() {
   free(mArg);
   free(nArg);
   free(pArg);
+  free(rArg);
   free(tArg);
   printf("%sMaster waiting on all processes do die%s\n", RED, NRM);
   childPid = wait(&status);
@@ -642,11 +424,8 @@ void cleanup() {
     perror("Faild to destroy resource shared mem seg");
   }
 
-  clearQueues();
-
   printf("%sMaster about to delete message queues%s\n", RED, NRM);
   //Delete the message queues
-  msgctl(slaveQueueId, IPC_RMID, NULL);
   msgctl(masterQueueId, IPC_RMID, NULL);
 
   if(fclose(file)) {
@@ -675,22 +454,6 @@ void cleanup() {
   //kill(getpid(), SIGKILL);
 }
 
-
-//make sure all the nodes in the queues are freed
-void clearQueues(void) {
-  while(!isEmpty(QUEUE0)) {
-    pop(QUEUE0);
-  }
-  while(!isEmpty(QUEUE1)) {
-    pop(QUEUE1);
-  }
-  while(!isEmpty(QUEUE2)) {
-    pop(QUEUE2);
-  }
-  while(!isEmpty(QUEUE3)) {
-    pop(QUEUE3);
-  }
-}
 
 //Detach and remove function
 int detachAndRemoveTimer(int shmid, sharedStruct *shmaddr) {
