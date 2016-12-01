@@ -95,19 +95,31 @@ int main (int argc, char **argv) {
 
   do {
   
+    //If this process' request flag is -1, it is not waiting on anything
+    //go ahead and determine an action
     if(pcbArray[processNumber].request == -1) {
+      //Check to see if process will terminate
       if(willTerminate()) {
         notFinished = 0;
       }
+      //if not, see what other action it will take
       else {
         if(takeAction()) {
           int choice = rand() % 2;
+          //Request a resource
           if(choice) {
             pcbArray[processNumber].request = chooseResource(); 
             sendMessage(masterQueueId, 3);
           }
+          //Release a resource
           else {
-            pcbArray[processNumber].release = 1;
+            int release;
+            for(release = 0; release < 20; release++) {
+              if(pcbArray[processNumber].allocation.type[release] > -1) {
+                break;
+              }
+            }
+            pcbArray[processNumber].release = release;
             sendMessage(masterQueueId, 3);
           }
         }

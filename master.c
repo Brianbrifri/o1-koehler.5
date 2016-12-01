@@ -250,6 +250,7 @@ int incrementTimer(void) {
   return random;
 }
 
+//Checks message queue and returns the process location of the sender in the array
 int processSystem(void) {
   struct msgbuf msg;
 
@@ -344,7 +345,7 @@ void updateAfterProcessFinish(int processLocation) {
         pcbArray[processLocation].allocation.quantity[i] = 0;
       } 
     }
-    updateAverageTurnaroundTime(processLocation);
+    //Reset all values
     pcbArray[processLocation].totalTimeRan = 0;
     pcbArray[processLocation].createTime = 0;
     pcbArray[processLocation].request = -1;
@@ -355,14 +356,18 @@ void updateAfterProcessFinish(int processLocation) {
 
 void setupResources(void) {
   int i;
+  //Set the resource types, quantity, and quantAvail
   for(i = 0; i < 20; i++) {
     resourceArray[i].type = i; 
     resourceArray[i].quantity = 1 + rand() % 10;
     resourceArray[i].quantAvail = resourceArray[i].quantity;
   }
 
+  //Between 3 and 5 resources will be shareable
   int numShared = 3 + rand() % 3;
 
+  //Get randomly choose a resource for those that
+  //will be shared
   for(i = 0; i < numShared; i++) {
     int choice = rand() % 20;
     resourceArray[choice].quantity = 9999;
