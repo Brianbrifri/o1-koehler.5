@@ -97,7 +97,8 @@ int main (int argc, char **argv) {
   
     //If this process' request flag is -1, it is not waiting on anything
     //go ahead and determine an action
-    if(pcbArray[processNumber].request == -1) {
+    if(pcbArray[processNumber].request == -1 && pcbArray[processNumber].release == -1) {
+      //printf("    Slave %d has no request\n", processNumber);
       //Check to see if process will terminate
       if(willTerminate()) {
         notFinished = 0;
@@ -109,28 +110,27 @@ int main (int argc, char **argv) {
           //Request a resource
           if(choice) {
             pcbArray[processNumber].request = chooseResource(); 
-            sendMessage(masterQueueId, 3);
+            //sendMessage(masterQueueId, 3);
           }
           //Release a resource
           else {
-            int release;
-            for(release = 0; release < 20; release++) {
-              if(pcbArray[processNumber].allocation.type[release] > -1) {
+            int i;
+            for(i = 0; i < 20; i++) {
+              if(pcbArray[processNumber].allocation.quantity[i] > 0) {
+                printf("    Slave %d releasing %d\n", processNumber, i);
+                pcbArray[processNumber].release = i;
                 break;
               }
             }
-            pcbArray[processNumber].release = release;
-            sendMessage(masterQueueId, 3);
+            //sendMessage(masterQueueId, 3);
           }
         }
       }
     }
-
-  
   } while (notFinished && myStruct->sigNotReceived);
 
-  pcbArray[processNumber].processID = 0;
-  sendMessage(masterQueueId, 3);
+  pcbArray[processNumber].processID = -1;
+  //sendMessage(masterQueueId, 3);
 
   if(shmdt(myStruct) == -1) {
     perror("    Slave could not detach shared memory struct");
@@ -163,7 +163,7 @@ int willTerminate(void) {
 
 int chooseResource(void) {
   int choice = rand() % 20;
-  return resourceArray[choice].type;
+  return choice;
 }
 
 int takeAction(void) {

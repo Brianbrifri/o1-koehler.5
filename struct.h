@@ -49,7 +49,6 @@ typedef struct msgbuf {
 } msgbuf;
 
 typedef struct resourceAlloc {
-  int type[20];
   int quantity[20];
 } resourceAlloc;
 
@@ -63,7 +62,6 @@ typedef struct PCB {
 } PCB;
 
 typedef struct resource {
-  int type;
   int quantity;
   int quantAvail;
 } resource;

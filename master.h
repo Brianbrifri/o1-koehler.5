@@ -26,6 +26,8 @@ void updateAverageTurnaroundTime(int);
 int processSystem(void);
 void updateAfterProcessFinish(int);
 void setupResources(void);
+void resourceSnapshot(void);
+void checkAndProcessRequests(void); 
 void interruptHandler(int);
 void cleanup(void);
 void sendMessage(int, int);
@@ -79,7 +81,7 @@ struct sharedStruct *myStruct;
 //Constants for timing the program
 const long long MAX_TIME = 20000000000;
 const int MAX_FUTURE_SPAWN = 280000001;
-const int MAX_IDLE_INCREMENT = 10001;
+const int MAX_IDLE_INCREMENT = 100000001;
 const int MAX_TOTAL_PROCESS_TIME = 700000001;
 const int CHANCE_HIGH_PRIORITY = 20;
 const int MAXSLAVE = 20;

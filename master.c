@@ -148,10 +148,11 @@ int main (int argc, char **argv)
     pcbArray[i].createTime = 0;
     int j;
     for(j = 0; j < 20; j++) {
-      pcbArray[i].allocation.type[j] = -1;
       pcbArray[i].allocation.quantity[j] = 0;
     }
   }
+
+  setupResources();
 
   //Open file and mark the beginning of the new log
   file = fopen(filename, "w");
@@ -165,7 +166,6 @@ int main (int argc, char **argv)
 
   fprintf(file,"***** BEGIN LOG *****\n");
 
-  int tempIncrement;
   do {
 
     if(isTimeToSpawn()) {
@@ -175,7 +175,8 @@ int main (int argc, char **argv)
 
     myStruct->ossTimer += incrementTimer();
 
-    updateAfterProcessFinish(processSystem());
+    //updateAfterProcessFinish(processSystem());
+    checkAndProcessRequests();
   
   } while (myStruct->ossTimer < MAX_TIME && myStruct->sigNotReceived);
 
@@ -200,6 +201,7 @@ void setTimeToSpawn(void) {
 
 void spawnSlave(void) {
 
+    resourceSnapshot();
     processNumberBeingSpawned = -1;
     
     int i;
@@ -254,16 +256,21 @@ int incrementTimer(void) {
 int processSystem(void) {
   struct msgbuf msg;
 
+  printf("---------------------------BEGIN MESSAGE CHECKING--------------------\n");
   if(msgrcv(masterQueueId, (void *) &msg, sizeof(msg.mText), 3, IPC_NOWAIT) == -1) {
     if(errno != ENOMSG) {
       perror("Error master receiving message");
+      printf("---------------------------END MESSAGE CHECKING--------------------\n");
       return -1;
     }
     printf("No message for master\n");
+    printf("---------------------------END MESSAGE CHECKING--------------------\n");
     return -1;
   }
   else {
     int processNum = atoi(msg.mText);
+    //printf("Master received message from %d\n", processNum);
+    printf("---------------------------END MESSAGE CHECKING--------------------\n");
     return processNum;
   }
 }
@@ -276,8 +283,11 @@ void updateAverageTurnaroundTime(int pcb) {
 
 void updateAfterProcessFinish(int processLocation) {
 
+  printf("---------------------------BEGIN UPDATEAFTERPROCESS--------------------\n");
+
   //If no message received, no process performed any actions this check. Return.
   if(processLocation == -1) {
+    printf("---------------------------END UPDATEAFTERPROCESS--------------------\n");
     return;
   }
 
@@ -290,58 +300,47 @@ void updateAfterProcessFinish(int processLocation) {
     int release = pcbArray[processLocation].release;
     //If request flag is set, try to give that process the requested resource
     if(request > -1) {
+      printf("Messaged received for request of %d\n", request);
       //If there are available resources, allocate them
-      if(resourceArray[request].quantAvail > 0) {
-        pcbArray[processLocation].request = -1;
-        resourceArray[request].quantAvail -= 1;
+      int quant;
+      if((quant = resourceArray[request].quantAvail) > 0) {
+        printf("There are %d of resource %d\n", quant, request);
         int i;
         int openSpace = -1;
         int foundExisting = 0;
         //See if the process already has that resource, if so, just update the quantity
-        for(i = 0; i < 20; i++) {
-          if(pcbArray[processLocation].allocation.type[i] == request) {
-            pcbArray[processLocation].allocation.quantity[i] += 1; 
-            foundExisting = 1;
-            break;
-          }
-          //Set the openSpace var to the first available openSpace
-          else {
-            if(openSpace == -1) {
-              openSpace = i;
-            } 
-          }
-        }
+            pcbArray[processLocation].allocation.quantity[request] += 1; 
+            printf("Increased existing resource %d for %d\n", request, processLocation);
         //Otherwise, give it a new resource
-        if(!foundExisting) {
-          pcbArray[processLocation].allocation.type[openSpace] = request;
-          pcbArray[processLocation].allocation.quantity[openSpace] += 1; 
-        }
+        pcbArray[processLocation].request = -1;
+        resourceArray[request].quantAvail--;
       } 
     }
     //If the release flag was set, release on of the selected resources
     //and put it back in the resource array
     if(release > -1) {
+      printf("Releasing resouce %d from process %d\n", release, processLocation);
       pcbArray[processLocation].allocation.quantity[release] -= 1;
       resourceArray[release].quantAvail += 1;
+      pcbArray[processLocation].release = -1;
       //If that was the last resource allocated to the process
       //set the type to -1
-      if(pcbArray[processLocation].allocation.quantity[release] == 0) {
-         pcbArray[processLocation].allocation.type[release] = -1;
-      }
     }
+    printf("---------------------------END UPDATEAFTERPROCESS--------------------\n");
   }
   //If the processID is 0, then it is no longer running. Proceed with cleanup
   else {
-    printf("%sProcess completed its time%s\n", GRN, NRM);
+    printf("%sProcess %d completed its time%s\n", GRN, processLocation, NRM);
     fprintf(file, "Process completed its time\n");
     int i;
     int resource;
     //Go through all the allocations to the dead process and put them back into the
     //resource array
     for(i = 0; i < 20; i++) {
-      if((resource = pcbArray[processLocation].allocation.type[i]) != -1) {
-        resourceArray[resource].quantAvail += pcbArray[processLocation].allocation.quantity[i];
-        pcbArray[processLocation].allocation.type[i] = -1;
+      if((resource = pcbArray[processLocation].allocation.quantity[i]) > 0) {
+        int returnQuant = pcbArray[processLocation].allocation.quantity[i];
+        resourceArray[resource].quantAvail += returnQuant;
+        printf("Returning %d of resource %d from process %d\n", returnQuant, resource, processLocation);
         pcbArray[processLocation].allocation.quantity[i] = 0;
       } 
     }
@@ -350,6 +349,12 @@ void updateAfterProcessFinish(int processLocation) {
     pcbArray[processLocation].createTime = 0;
     pcbArray[processLocation].request = -1;
     pcbArray[processLocation].release = -1;
+    printf("---------------------------END UPDATEAFTERPROCESS--------------------\n");
+  }
+
+  int nextMessage = processSystem();
+  if(nextMessage != -1) {
+    updateAfterProcessFinish(nextMessage); 
   }
 
 }
@@ -358,7 +363,6 @@ void setupResources(void) {
   int i;
   //Set the resource types, quantity, and quantAvail
   for(i = 0; i < 20; i++) {
-    resourceArray[i].type = i; 
     resourceArray[i].quantity = 1 + rand() % 10;
     resourceArray[i].quantAvail = resourceArray[i].quantity;
   }
@@ -368,11 +372,100 @@ void setupResources(void) {
 
   //Get randomly choose a resource for those that
   //will be shared
+  //TODO make this check for previously chosen resources
   for(i = 0; i < numShared; i++) {
     int choice = rand() % 20;
     resourceArray[choice].quantity = 9999;
     resourceArray[choice].quantAvail = 9999;
   }
+
+  resourceSnapshot();
+}
+
+void resourceSnapshot(void) {
+  int i;
+  for(i = 0; i < 20; i++) {
+    printf("Resource %d has %d available out of %d\n", i, resourceArray[i].quantAvail, resourceArray[i].quantity);
+  }
+}
+
+void checkAndProcessRequests(void) {
+  printf("---------------------------BEGIN CHECKREQUESTS--------------------\n");
+  int i;
+  int j;
+  int request = -1;
+  int release = -1;
+  //Go through and look at all the request/release/processID members of each pcbArray element
+  //and see if there is any processing to do 
+  for(i = 0; i < ARRAY_SIZE; i++) {
+    int resourceType = -1;
+    printf("------------Checking process %d----------------\n", i);
+    int quant;
+    //If the request flag is set with the value of a resource type, process the request
+    if((resourceType = pcbArray[i].request) >= 0) {
+      printf("Found a request from process %d for %d\n", i, resourceType);
+      //If there are resources of the type available, assign it
+      if((quant = resourceArray[resourceType].quantAvail) > 0) {
+        printf("There are %d out of %d for resource %d available\n", quant, resourceArray[resourceType].quantity, resourceType);
+        printf("Increased resource %d for process %d\n", resourceType, i);
+        //Increase the quantity of the resourceType for the element in the pcbArray
+        //requesting it
+        pcbArray[i].allocation.quantity[resourceType]++;
+        //Reset the request to -1
+        pcbArray[i].request = -1;
+        //Decrease the quantity of the resource type in the resource array
+        resourceArray[resourceType].quantAvail--;
+        printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+      }
+    }
+    //If the release flag is set with the value of the resourceType, process it
+    else if((resourceType = pcbArray[i].release) >= 0) {
+      printf("Releasing resouce %d from process %d\n", resourceType, i);
+      //Decrease the count of the quantity of that resource for that element in the pcbArray
+      pcbArray[i].allocation.quantity[resourceType]--;
+      //Increase the quantity of that resource type in the resourceArray
+      resourceArray[resourceType].quantAvail++;
+      printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+      //Reset the release flag to -1
+      pcbArray[i].release = -1;
+    }
+    //If the process set its processID to -1, that means it died and we can put all
+    //the resources it had back into the resourceArray
+    else if(pcbArray[i].processID == -1){
+      printf("%sProcess %d completed its time%s\n", GRN, i, NRM);
+      fprintf(file, "Process completed its time\n");
+      //Go through all the allocations to the dead process and put them back into the
+      //resource array
+      for(j = 0; j < 20; j++) {
+        //If the quantity is > 0 for that resource, put them back
+        if(pcbArray[i].allocation.quantity[j] > 0) {
+          printf("Before return of resources, there are %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
+          //Get the quantity to put back
+          int returnQuant = pcbArray[i].allocation.quantity[j];
+          //Increase the resource type quantAvail in the resource array
+          resourceArray[j].quantAvail += returnQuant;
+          printf("Returning %d of resource %d from process %d\n", returnQuant, j, i);
+          printf("There are now %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
+          //Set the quantity of the pcbArray to 0
+          pcbArray[i].allocation.quantity[j] = 0;
+        } 
+      }
+      //Reset all values
+      pcbArray[i].processID = 0;
+      pcbArray[i].totalTimeRan = 0;
+      pcbArray[i].createTime = 0;
+      pcbArray[i].request = -1;
+      pcbArray[i].release = -1;
+    
+    }
+    else {
+      //If there is a process at that location but doesn't meet the above criteria, print
+      if(pcbArray[i].processID > 0) {
+        printf("There is no action for process %d\n", i);
+      }
+    }
+  }
+  printf("---------------------------END CHECKREQUESTS--------------------\n");
 }
 
 //Interrupt handler function that calls the process destroyer
