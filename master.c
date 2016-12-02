@@ -175,7 +175,10 @@ int main (int argc, char **argv)
 
     myStruct->ossTimer += incrementTimer();
 
-    //updateAfterProcessFinish(processSystem());
+    
+    printf("---------------------------BEGIN MESSAGECHECKING--------------------\n");
+    performActionsFromMessage(processMessageQueue());
+    printf("----------------------------END MESSAGECHECKING---------------------\n");
     checkAndProcessRequests();
   
   } while (myStruct->ossTimer < MAX_TIME && myStruct->sigNotReceived);
@@ -253,7 +256,45 @@ int incrementTimer(void) {
 }
 
 //Checks message queue and returns the process location of the sender in the array
-int processSystem(void) {
+int processMessageQueue(void) {
+  struct msgbuf msg;
+
+  if(msgrcv(masterQueueId, (void *) &msg, sizeof(msg.mText), 3, IPC_NOWAIT) == -1) {
+    if(errno != ENOMSG) {
+      perror("Error master receivine message");
+      return -1;
+    }
+    printf("No message for master\n");
+    return -1;
+  }
+  else {
+    int processNum = atoi(msg.mText);
+    return processNum;
+  }
+}
+
+void performActionsFromMessage(int processNum) {
+  if(processNum == -1) {
+    return;
+  }
+  int resourceType;
+  if((resourceType = pcbArray[processNum].request) >= 0) {
+    printf("Found a request from process %d for %d\n", processNum, resourceType);
+    //If there are resources of the type available, assign it
+    performResourceRequest(resourceType, processNum);
+  }
+  else if ((resourceType = pcbArray[processNum].release) >= 0) {
+    performResourceRelease(resourceType, processNum);
+  }
+  else if(pcbArray[processNum].processID == -1) {
+    performProcessCleanup(processNum);
+  }
+  else {
+    printf("Found no action for this message\n");
+  }
+
+  performActionsFromMessage(processMessageQueue());
+
 }
 
 void updateAverageTurnaroundTime(int pcb) {

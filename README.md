@@ -6,8 +6,9 @@ The program runs until either
   1) 20 simulated seconds are reached or
   2) 20 real seconds are reached
 
-This program does no message passing. The slaves put their request for new/release of resource into shared memory and master goes through the array of 
-  processes and checks these requests. If it can grant the request for a new one, it will. It will always perform the release of a resource by a process.
+This program does message passing to ensure it is a first come first serve on the resources requested; otherwise, resources would be grandted in the same order every time.
+  The slaves put their request for new/release of resource into shared memory then sends a message to master. Master processes the message queue recursively then once those are gone, 
+  goes through the array of processes and checks for unfulfilled requests. If it can grant the request for a new one, it will. It will always perform the release of a resource by a process.
   I used a struct for the resource that holds the quantity and quantAvail. Whenever one gets assigned to a process, the quantAvail gets decreased. If 
   put back, it gets increased. The processes themselves keep track of which resources it has. 
 

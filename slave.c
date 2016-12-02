@@ -110,7 +110,7 @@ int main (int argc, char **argv) {
           //Request a resource
           if(choice) {
             pcbArray[processNumber].request = chooseResource(); 
-            //sendMessage(masterQueueId, 3);
+           sendMessage(masterQueueId, 3);
           }
           //Release a resource
           else {
@@ -122,7 +122,7 @@ int main (int argc, char **argv) {
                 break;
               }
             }
-            //sendMessage(masterQueueId, 3);
+            sendMessage(masterQueueId, 3);
           }
         }
       }
@@ -130,7 +130,7 @@ int main (int argc, char **argv) {
   } while (notFinished && myStruct->sigNotReceived);
 
   pcbArray[processNumber].processID = -1;
-  //sendMessage(masterQueueId, 3);
+  sendMessage(masterQueueId, 3);
 
   if(shmdt(myStruct) == -1) {
     perror("    Slave could not detach shared memory struct");
@@ -167,8 +167,8 @@ int chooseResource(void) {
 }
 
 int takeAction(void) {
-  int choice = rand() % 20;
-  return choice == 1 ? 1 : 0;
+  int choice = rand() % 2;
+  return choice;
 }
 
 void sendMessage(int qid, int msgtype) {
