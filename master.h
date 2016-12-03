@@ -30,7 +30,9 @@ void resourceSnapshot(void);
 void performResourceRequest(int, int);
 void performResourceRelease(int, int);
 void performProcessCleanup(int);
-bool deadlock(void);
+int deadlock(void);
+int reqLtAvail(int*, int);
+void killAProcess(void);
 void checkAndProcessRequests(void); 
 void interruptHandler(int);
 void cleanup(void);
@@ -62,7 +64,9 @@ volatile sig_atomic_t cleanupCalled = 0;
 
 pid_t myPid, childPid;
 int tValue = 20;
-int sValue = 3;
+int vFlag = 0;
+int checkDeadlockFlag = 0;
+long long lastDeadlockCheck = 0;
 int status;
 int shmid;
 int pcbShmid;
@@ -78,7 +82,8 @@ long long processWaitTime = 0;
 long long totalProcessLifeTime = 0;
 int totalProcessesSpawned = 0;
 int messageReceived = 0;
-//long long *ossTimer = 0;
+int *requested;
+int *available;
 
 struct sharedStruct *myStruct;
 

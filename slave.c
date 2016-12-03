@@ -109,7 +109,7 @@ int main (int argc, char **argv) {
           int choice = rand() % 2;
           //Request a resource
           if(choice) {
-            pcbArray[processNumber].request = chooseResource(); 
+           pcbArray[processNumber].request = chooseResource(); 
            sendMessage(masterQueueId, 3);
           }
           //Release a resource
@@ -117,7 +117,6 @@ int main (int argc, char **argv) {
             int i;
             for(i = 0; i < 20; i++) {
               if(pcbArray[processNumber].allocation.quantity[i] > 0) {
-                printf("    Slave %d releasing %d\n", processNumber, i);
                 pcbArray[processNumber].release = i;
                 break;
               }
@@ -127,10 +126,12 @@ int main (int argc, char **argv) {
         }
       }
     }
-  } while (notFinished && myStruct->sigNotReceived);
+  } while (notFinished && myStruct->sigNotReceived && !pcbArray[processNumber].terminate);
 
-  pcbArray[processNumber].processID = -1;
-  sendMessage(masterQueueId, 3);
+  if(!pcbArray[processNumber].terminate) {
+    pcbArray[processNumber].processID = -1;
+    sendMessage(masterQueueId, 3);
+  }
 
   if(shmdt(myStruct) == -1) {
     perror("    Slave could not detach shared memory struct");

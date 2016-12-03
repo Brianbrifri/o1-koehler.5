@@ -56,6 +56,7 @@ typedef struct PCB {
   pid_t processID;
   int request;
   int release;
+  int terminate;
   resourceAlloc allocation;
   long long totalTimeRan;
   long long createTime;

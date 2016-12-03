@@ -15,7 +15,7 @@ int main (int argc, char **argv)
   char *defaultFileName = "test.out";
   char *programName = argv[0];
   char *option = NULL;
-  char *short_options = "hs:l:t:";
+  char *short_options = "hl:t:v";
   int c;
 
   
@@ -26,12 +26,8 @@ int main (int argc, char **argv)
       case 'h':
         hflag = 1;
         break;
-      case 's':
-        sValue = atoi(optarg);
-        if(sValue > MAXSLAVE) {
-          sValue = 20;
-          fprintf(stderr, "No more than 20 slave processes allowed at a time. Reverting to 20.\n");
-        }
+      case 'v':
+        vFlag = 1;
         break;
       case 'l':
         filename = optarg;
@@ -40,11 +36,7 @@ int main (int argc, char **argv)
         tValue = atoi(optarg);
         break;
       case '?':
-        if (optopt == 's') {
-          fprintf(stderr, "Option -%c requires an argument. Using default value.\n", optopt);
-          sValue = 5;
-        }
-        else if (optopt == 'l') {
+        if (optopt == 'l') {
           fprintf(stderr, "Option -%c requires an argument. Using default value.\n", optopt);
           filename = defaultFileName;
         }
@@ -142,6 +134,7 @@ int main (int argc, char **argv)
   int i;
   for (i = 0; i < ARRAY_SIZE; i++) {
     pcbArray[i].processID = 0;
+    pcbArray[i].terminate = 0;
     pcbArray[i].request = -1;
     pcbArray[i].release = -1;
     pcbArray[i].totalTimeRan = 0;
@@ -172,14 +165,32 @@ int main (int argc, char **argv)
       spawnSlave();
       setTimeToSpawn();
     }
+    if(myStruct->ossTimer - lastDeadlockCheck > NANO_MODIFIER) {
+      lastDeadlockCheck = myStruct->ossTimer;
+      printf("%s---------------------------BEGIN DEADLOCK STUFF--------------------%s\n", TIMER, NRM);
+      if(deadlock()) {
+        do {
+          killAProcess();
+        }while(deadlock());
+      }
+      printf("%s---------------------------END DEADLOCK STUFF--------------------%s\n", TIMER, NRM);
+    }
 
     myStruct->ossTimer += incrementTimer();
 
     
-    printf("---------------------------BEGIN MESSAGECHECKING--------------------\n");
+    if(vFlag) {
+      printf("---------------------------BEGIN MESSAGECHECKING--------------------\n");
+    }
     performActionsFromMessage(processMessageQueue());
-    printf("----------------------------END MESSAGECHECKING---------------------\n");
+    if(vFlag) {
+       printf("----------------------------END MESSAGECHECKING---------------------\n");
+    }
     checkAndProcessRequests();
+
+    if(!vFlag) {
+      sleep(.01);
+    }   
   
   } while (myStruct->ossTimer < MAX_TIME && myStruct->sigNotReceived);
 
@@ -191,15 +202,23 @@ int main (int argc, char **argv)
 }
 
 bool isTimeToSpawn(void) {
-  printf("%sChecking time to spawn: future = %llu.%09llu timer = %llu.%09llu%s\n", DIM, timeToSpawn / NANO_MODIFIER, timeToSpawn % NANO_MODIFIER, myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER, NRM);
-  fprintf(file, "Checking time to spawn: future = %llu timer = %llu\n", timeToSpawn, myStruct->ossTimer);
+  if(vFlag) {
+    printf("%sChecking time to spawn: future = %llu.%09llu timer = %llu.%09llu%s\n", DIM, timeToSpawn / NANO_MODIFIER, timeToSpawn % NANO_MODIFIER, myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER, NRM);
+  }
+  if(vFlag) {
+    fprintf(file, "Checking time to spawn: future = %llu timer = %llu\n", timeToSpawn, myStruct->ossTimer);
+  }
   return myStruct->ossTimer >= timeToSpawn ? true : false;
 }
 
 void setTimeToSpawn(void) {
   timeToSpawn = myStruct->ossTimer + rand() % MAX_FUTURE_SPAWN;
-  printf("Will try to spawn slave at time %s%s%llu.%09llu%s\n", BLK, YLWBK, timeToSpawn / NANO_MODIFIER, timeToSpawn % NANO_MODIFIER, NRM);
-  fprintf(file, "Will try to spawn slave at time %llu\n", timeToSpawn);
+  if(vFlag) {
+    printf("Will try to spawn slave at time %s%s%llu.%09llu%s\n", BLK, YLWBK, timeToSpawn / NANO_MODIFIER, timeToSpawn % NANO_MODIFIER, NRM);
+  }        
+  if(vFlag) {
+    fprintf(file, "Will try to spawn slave at time %llu\n", timeToSpawn);
+  }
 }
 
 void spawnSlave(void) {
@@ -217,12 +236,18 @@ void spawnSlave(void) {
     }
 
     if(processNumberBeingSpawned == -1) {
-      printf("%sPCB array is full. No process created.%s\n", REDBK, NRM);
-      fprintf(file, "PCB array is full. No process created.\n");
+      if(vFlag) {
+        printf("%sPCB array is full. No process created.%s\n", REDBK, NRM);
+      }
+      if(vFlag) {
+        fprintf(file, "PCB array is full. No process created.\n");
+      }
     }
 
     if(processNumberBeingSpawned != -1) {
-      printf("%sFound open PCB. Spawning process.%s\n", GRNBK, NRM);
+      if(vFlag) {
+        printf("%sFound open PCB. Spawning process.%s\n", GRNBK, NRM);
+      }
       totalProcessesSpawned = totalProcessesSpawned + 1;
       //exit on bad fork
       if((childPid = fork()) < 0) {
@@ -232,7 +257,9 @@ void spawnSlave(void) {
 
       //If good fork, continue to call exec with all the necessary args
       if(childPid == 0) {
-        printf("Total processes spawned: %d\n", totalProcessesSpawned);
+        if(vFlag) {
+          printf("Total processes spawned: %d\n", totalProcessesSpawned);
+        }
         pcbArray[processNumberBeingSpawned].createTime = myStruct->ossTimer;
         pcbArray[processNumberBeingSpawned].processID = getpid();
         sprintf(mArg, "%d", shmid);
@@ -264,7 +291,9 @@ int processMessageQueue(void) {
       perror("Error master receivine message");
       return -1;
     }
-    printf("No message for master\n");
+    if(vFlag) {
+      printf("No message for master\n");
+    }
     return -1;
   }
   else {
@@ -279,7 +308,9 @@ void performActionsFromMessage(int processNum) {
   }
   int resourceType;
   if((resourceType = pcbArray[processNum].request) >= 0) {
-    printf("Found a request from process %d for %d\n", processNum, resourceType);
+    if(vFlag) {
+      printf("Found a request from process %d for %d\n", processNum, resourceType);
+    }
     //If there are resources of the type available, assign it
     performResourceRequest(resourceType, processNum);
   }
@@ -290,7 +321,9 @@ void performActionsFromMessage(int processNum) {
     performProcessCleanup(processNum);
   }
   else {
-    printf("Found no action for this message\n");
+    if(vFlag) {
+      printf("Found no action for this message\n");
+    }
   }
 
   performActionsFromMessage(processMessageQueue());
@@ -316,7 +349,6 @@ void setupResources(void) {
 
   //Get randomly choose a resource for those that
   //will be shared
-  //TODO make this check for previously chosen resources
   for(i = 0; i < numShared; i++) {
     int choice = rand() % 20;
     resourceArray[choice].quantity = 9999;
@@ -329,12 +361,16 @@ void setupResources(void) {
 void resourceSnapshot(void) {
   int i;
   for(i = 0; i < 20; i++) {
-    printf("Resource %d has %d available out of %d\n", i, resourceArray[i].quantAvail, resourceArray[i].quantity);
+    if(vFlag) {
+      printf("Resource %d has %d available out of %d\n", i, resourceArray[i].quantAvail, resourceArray[i].quantity);
+    }
   }
 }
 
 void checkAndProcessRequests(void) {
-  printf("---------------------------BEGIN CHECKREQUESTS--------------------\n");
+  if(vFlag) {
+    printf("---------------------------BEGIN CHECKREQUESTS--------------------\n");
+  }
   int i;
   int j;
   int request = -1;
@@ -343,11 +379,12 @@ void checkAndProcessRequests(void) {
   //and see if there is any processing to do 
   for(i = 0; i < ARRAY_SIZE; i++) {
     int resourceType = -1;
-    printf("------------Checking process %d----------------\n", i);
     int quant;
     //If the request flag is set with the value of a resource type, process the request
     if((resourceType = pcbArray[i].request) >= 0) {
-      printf("Found a request from process %d for %d\n", i, resourceType);
+      if(vFlag) {
+        printf("Found a request from process %d for %d\n", i, resourceType);
+      }
       //If there are resources of the type available, assign it
       performResourceRequest(resourceType, i);
     }
@@ -363,18 +400,23 @@ void checkAndProcessRequests(void) {
     else {
       //If there is a process at that location but doesn't meet the above criteria, print
       if(pcbArray[i].processID > 0) {
-        printf("There is no action for process %d\n", i);
       }
     }
   }
-  printf("---------------------------END CHECKREQUESTS--------------------\n");
+  if(vFlag) {
+    printf("---------------------------END CHECKREQUESTS--------------------\n");
+  }
 }
 
 void performResourceRequest(int resourceType, int i) {
   int quant;
   if((quant = resourceArray[resourceType].quantAvail) > 0) {
-    printf("There are %d out of %d for resource %d available\n", quant, resourceArray[resourceType].quantity, resourceType);
-    printf("Increased resource %d for process %d\n", resourceType, i);
+    if(vFlag) {
+      printf("There are %d out of %d for resource %d available\n", quant, resourceArray[resourceType].quantity, resourceType);
+    }
+    if(vFlag) {
+      printf("Increased resource %d for process %d\n", resourceType, i);
+    }
     //Increase the quantity of the resourceType for the element in the pcbArray
     //requesting it
     pcbArray[i].allocation.quantity[resourceType]++;
@@ -382,49 +424,150 @@ void performResourceRequest(int resourceType, int i) {
     pcbArray[i].request = -1;
     //Decrease the quantity of the resource type in the resource array
     resourceArray[resourceType].quantAvail--;
-    printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+    if(vFlag) {
+      printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+    }
   }
 }
 
 void performResourceRelease(int resourceType, int i) {
-  printf("Releasing resouce %d from process %d\n", resourceType, i);
+  if(vFlag) {
+    printf("Releasing resouce %d from process %d\n", resourceType, i);
+  }
   //Decrease the count of the quantity of that resource for that element in the pcbArray
   pcbArray[i].allocation.quantity[resourceType]--;
   //Increase the quantity of that resource type in the resourceArray
   resourceArray[resourceType].quantAvail++;
-  printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+  if(vFlag) {
+    printf("There are now %d out of %d for resource %d\n", resourceArray[resourceType].quantAvail, resourceArray[resourceType].quantity, resourceType);
+  }
   //Reset the release flag to -1
   pcbArray[i].release = -1;
 }
 
 void performProcessCleanup(int i) {
-      printf("%sProcess %d completed its time%s\n", GRN, i, NRM);
-      fprintf(file, "Process completed its time\n");
-      //Go through all the allocations to the dead process and put them back into the
-      //resource array
-      int j;
-      for(j = 0; j < 20; j++) {
-        //If the quantity is > 0 for that resource, put them back
-        if(pcbArray[i].allocation.quantity[j] > 0) {
-          printf("Before return of resources, there are %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
-          //Get the quantity to put back
-          int returnQuant = pcbArray[i].allocation.quantity[j];
-          //Increase the resource type quantAvail in the resource array
-          resourceArray[j].quantAvail += returnQuant;
-          printf("Returning %d of resource %d from process %d\n", returnQuant, j, i);
-          printf("There are now %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
-          //Set the quantity of the pcbArray to 0
-          pcbArray[i].allocation.quantity[j] = 0;
-        } 
+  if(vFlag) {
+    printf("%sProcess %d completed its time%s\n", GRN, i, NRM);
+  }
+  if(vFlag) {
+    fprintf(file, "Process completed its time\n");
+  }
+  //Go through all the allocations to the dead process and put them back into the
+  //resource array
+  int j;
+  for(j = 0; j < 20; j++) {
+    //If the quantity is > 0 for that resource, put them back
+    if(pcbArray[i].allocation.quantity[j] > 0) {
+      if(vFlag) {
+        printf("Before return of resources, there are %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
       }
-      //Reset all values
-      pcbArray[i].processID = 0;
-      pcbArray[i].totalTimeRan = 0;
-      pcbArray[i].createTime = 0;
-      pcbArray[i].request = -1;
-      pcbArray[i].release = -1;
+      //Get the quantity to put back
+      int returnQuant = pcbArray[i].allocation.quantity[j];
+      //Increase the resource type quantAvail in the resource array
+      resourceArray[j].quantAvail += returnQuant;
+      if(vFlag) {
+        printf("Returning %d of resource %d from process %d\n", returnQuant, j, i);
+      }
+      if(vFlag) {
+        printf("There are now %d out of %d for resource %d\n", resourceArray[j].quantAvail, resourceArray[j].quantity, j);
+      }
+      //Set the quantity of the pcbArray to 0
+      pcbArray[i].allocation.quantity[j] = 0;
+    } 
+  }
+  //Reset all values
+  pcbArray[i].processID = 0;
+  pcbArray[i].totalTimeRan = 0;
+  pcbArray[i].createTime = 0;
+  pcbArray[i].request = -1;
+  pcbArray[i].release = -1;
 
 }
+
+int deadlock(void) {
+  printf("Begin deadlock detection at %llu.%llu\n", myStruct->ossTimer / NANO_MODIFIER, myStruct->ossTimer % NANO_MODIFIER);
+  int work[20];
+  int finish[18];
+
+  int p;
+  for(p = 0; p < 20; p++) {
+    work[p] = resourceArray[p].quantAvail;
+  } 
+  for(p = 0; p < 18; p++) {
+    finish[p] = 0; 
+  }
+  for(p = 0; p < 18; p++) {
+    if(!pcbArray[p].processID) {
+      finish[p] = 1;
+    }
+    if(finish[p]) continue;
+    if(reqLtAvail(work, p)) {
+      finish[p] = 1;
+      int i;
+      for(i = 0; i < 20; i++) {
+        work[i] += pcbArray[p].allocation.quantity[i];
+      }
+      p = -1;
+    }       
+  }
+
+
+  int deadlockCount = 0;
+  for(p = 0; p < 18; p++) {
+    if(!finish[p]) {
+      deadlockCount++; 
+    }
+  }
+
+  if(deadlockCount > 0) {
+    printf("%d processes: ", deadlockCount);
+    for(p = 0; p < 18; p++) {
+      if(!finish[p]) {
+        printf("%d ", p);
+      }
+    }
+    printf("are deadlocked\n");
+    return deadlockCount;
+  }
+  else {
+    printf("There are no deadlocks\n");
+    return deadlockCount;
+  }
+}
+
+int reqLtAvail(int *work, int p) {
+  if(pcbArray[p].request == -1) {
+    return 1;
+  } 
+  if(work[pcbArray[p].request] > 0) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
+
+void killAProcess(void) {
+  int process;
+  int max = 0;
+  int i;
+  int j;
+  for(i = 0; i < 18; i++) {
+    int total = 0;
+    for(j = 0; j < 20; j++) {
+      total += pcbArray[i].allocation.quantity[j];
+    } 
+    if(total > max) {
+      max = total;
+      process = i;
+    } 
+  }
+  printf("Killing process %d\n", process);
+  pcbArray[process].terminate = 1;
+  sleep(.01);
+  performProcessCleanup(process);
+}
+
 //Interrupt handler function that calls the process destroyer
 //Ignore SIGQUIT and SIGINT signal, not SIGALRM, so that
 //I can handle those two how I want
@@ -433,11 +576,11 @@ void interruptHandler(int SIG){
   signal(SIGINT, SIG_IGN);
 
   if(SIG == SIGINT) {
-    fprintf(stderr, "\n%sCTRL-C received. Calling shutdown functions.%s\n", RED, NRM);
+     fprintf(stderr, "\n%sCTRL-C received. Calling shutdown functions.%s\n", RED, NRM);
   }
 
   if(SIG == SIGALRM) {
-    fprintf(stderr, "%sMaster has timed out. Initiating shutdown sequence.%s\n", RED, NRM);
+     fprintf(stderr, "%sMaster has timed out. Initiating shutdown sequence.%s\n", RED, NRM);
   }
 
   if(!cleanupCalled) {
@@ -454,7 +597,7 @@ void cleanup() {
   signal(SIGQUIT, SIG_IGN);
   myStruct->sigNotReceived = 0;
 
-  printf("%sMaster sending SIGQUIT%s\n", RED, NRM);
+   printf("%sMaster sending SIGQUIT%s\n", RED, NRM);
   kill(-getpgrp(), SIGQUIT);
 
   //free up the malloc'd memory for the arguments
@@ -463,7 +606,7 @@ void cleanup() {
   free(pArg);
   free(rArg);
   free(tArg);
-  printf("%sMaster waiting on all processes do die%s\n", RED, NRM);
+   printf("%sMaster waiting on all processes do die%s\n", RED, NRM);
   childPid = wait(&status);
 
   //Detach and remove the shared memory after all child process have died
@@ -479,14 +622,14 @@ void cleanup() {
     perror("Faild to destroy resource shared mem seg");
   }
 
-  printf("%sMaster about to delete message queues%s\n", RED, NRM);
+   printf("%sMaster about to delete message queues%s\n", RED, NRM);
   //Delete the message queues
   msgctl(masterQueueId, IPC_RMID, NULL);
 
   if(fclose(file)) {
     perror("    Error closing file");
   }
-  printf("%sMaster about to terminate%s\n", RED, NRM);
+   printf("%sMaster about to terminate%s\n", RED, NRM);
 
   printf("\n\n\n\n");
   printf("%s%s******************REPORT*****************%s\n", RED, REPORT, NRM);
@@ -512,7 +655,7 @@ void cleanup() {
 
 //Detach and remove function
 int detachAndRemoveTimer(int shmid, sharedStruct *shmaddr) {
-  printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
+   printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
   int error = 0;
   if(shmdt(shmaddr) == -1) {
     error = errno;
@@ -529,7 +672,7 @@ int detachAndRemoveTimer(int shmid, sharedStruct *shmaddr) {
 
 //Detach and remove function
 int detachAndRemoveArray(int shmid, PCB *shmaddr) {
-  printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
+   printf("%sMaster: Detach and Remove Shared Memory%s\n", RED, NRM);
   int error = 0;
   if(shmdt(shmaddr) == -1) {
     error = errno;
@@ -567,7 +710,7 @@ void printHelpMessage(void) {
     printf("The following is a helpful guide to enable you to use this\n");
     printf("slavedriver program to the best of your ability!\n\n");
     printf("-h, --help: Prints this help message.\n");
-    printf("-s: Allows you to set the number of slave process waiting to run.\n");
+    printf("-v: Allows you to set the vFlag flag to see all debug output.\n");
     printf("\tThe default value is 5. The max is 20.\n");
     printf("-l: Allows you to set the filename for the logger so the aliens can see how bad you mess up.\n");
     printf("\tThe default value is test.out.\n");
@@ -578,5 +721,5 @@ void printHelpMessage(void) {
 //short help message
 void printShortHelpMessage(void) {
   printf("\nAcceptable options are:\n");
-  printf("[-h], [--help], [-l][required_arg], [-s][required_arg], [-t][required_arg]\n\n");
+  printf("[-h], [--help], [-l][required_arg], [-t][required_arg], [-v]\n\n");
 }
