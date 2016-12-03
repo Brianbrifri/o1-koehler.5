@@ -28,6 +28,7 @@ int main (int argc, char **argv)
         break;
       case 'v':
         vFlag = 1;
+        MAX_IDLE_INCREMENT = 100000001;
         break;
       case 'l':
         filename = optarg;
@@ -134,6 +135,7 @@ int main (int argc, char **argv)
   int i;
   for (i = 0; i < ARRAY_SIZE; i++) {
     pcbArray[i].processID = 0;
+    pcbArray[i].deadlocked = 0;
     pcbArray[i].terminate = 0;
     pcbArray[i].request = -1;
     pcbArray[i].release = -1;
@@ -189,7 +191,7 @@ int main (int argc, char **argv)
     checkAndProcessRequests();
 
     if(!vFlag) {
-      sleep(.01);
+//      sleep(.1);
     }   
   
   } while (myStruct->ossTimer < MAX_TIME && myStruct->sigNotReceived);
@@ -380,6 +382,9 @@ void checkAndProcessRequests(void) {
   for(i = 0; i < ARRAY_SIZE; i++) {
     int resourceType = -1;
     int quant;
+    if(vFlag) {
+      printf("--------------CHECKING PROCESS %d---------------\n", i);
+    }
     //If the request flag is set with the value of a resource type, process the request
     if((resourceType = pcbArray[i].request) >= 0) {
       if(vFlag) {
@@ -400,6 +405,9 @@ void checkAndProcessRequests(void) {
     else {
       //If there is a process at that location but doesn't meet the above criteria, print
       if(pcbArray[i].processID > 0) {
+        if(vFlag) {
+          printf("No request for this process\n");
+        }
       }
     }
   }
@@ -515,7 +523,11 @@ int deadlock(void) {
   int deadlockCount = 0;
   for(p = 0; p < 18; p++) {
     if(!finish[p]) {
+      pcbArray[p].deadlocked = 1;
       deadlockCount++; 
+    }
+    else {
+      pcbArray[p].deadlocked = 0;
     }
   }
 
@@ -553,18 +565,20 @@ void killAProcess(void) {
   int i;
   int j;
   for(i = 0; i < 18; i++) {
-    int total = 0;
-    for(j = 0; j < 20; j++) {
-      total += pcbArray[i].allocation.quantity[j];
-    } 
-    if(total > max) {
-      max = total;
-      process = i;
-    } 
+    if(pcbArray[i].deadlocked) {
+      int total = 0;
+      for(j = 0; j < 20; j++) {
+        total += pcbArray[i].allocation.quantity[j];
+      }
+      if(total > max) {
+        max = total;
+        process = i;
+      }
+    }
   }
   printf("Killing process %d\n", process);
+  pcbArray[process].deadlocked = 0;
   pcbArray[process].terminate = 1;
-  sleep(.01);
   performProcessCleanup(process);
 }
 
@@ -629,24 +643,8 @@ void cleanup() {
   if(fclose(file)) {
     perror("    Error closing file");
   }
-   printf("%sMaster about to terminate%s\n", RED, NRM);
+  printf("%sMaster about to terminate%s\n", RED, NRM);
 
-  printf("\n\n\n\n");
-  printf("%s%s******************REPORT*****************%s\n", RED, REPORT, NRM);
-  printf("%s%s*                                       *%s\n", RED, REPORT, NRM);
-  printf("%s%s*             CPU IDLE TIME:            *%s\n", RED, REPORT, NRM);
-  printf("%s%s*             %llu.%09llu               *%s\n", RED, REPORT, idleTime / NANO_MODIFIER, idleTime % NANO_MODIFIER, NRM);
-  printf("%s%s*                                       *%s\n", RED, REPORT, NRM);
-  printf("%s%s*            AVG TURNAROUND:            *%s\n", RED, REPORT, NRM);
-  printf("%s%s*             %llu.%09llu               *%s\n", RED, REPORT, (totalProcessLifeTime / totalProcessesSpawned) / NANO_MODIFIER, (totalProcessLifeTime / totalProcessesSpawned) % NANO_MODIFIER, NRM);
-  printf("%s%s*                                       *%s\n", RED, REPORT, NRM);
-  printf("%s%s*               AVG WAIT:               *%s\n", RED, REPORT, NRM);
-  printf("%s%s*             %llu.%09llu               *%s\n", RED, REPORT, (processWaitTime / totalProcessesSpawned) / NANO_MODIFIER, (processWaitTime / totalProcessesSpawned) % NANO_MODIFIER, NRM);
-  printf("%s%s*                                       *%s\n", RED, REPORT, NRM);
-  printf("%s%s*****************************************%s\n", RED, REPORT, NRM);
-
-  printf("\n\n\n\n");
- 
   exit(1);
   //Kill this master process
   //kill(getpid(), SIGKILL);

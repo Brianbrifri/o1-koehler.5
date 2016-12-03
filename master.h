@@ -82,15 +82,12 @@ long long processWaitTime = 0;
 long long totalProcessLifeTime = 0;
 int totalProcessesSpawned = 0;
 int messageReceived = 0;
-int *requested;
-int *available;
 
 struct sharedStruct *myStruct;
 
 //Constants for timing the program
 const long long MAX_TIME = 20000000000;
 const int MAX_FUTURE_SPAWN = 280000001;
-const int MAX_IDLE_INCREMENT = 100000001;
 const int MAX_TOTAL_PROCESS_TIME = 700000001;
 const int CHANCE_HIGH_PRIORITY = 20;
 const int MAXSLAVE = 20;
@@ -98,6 +95,7 @@ const int ARRAY_SIZE = 18;
 FILE *file;
 struct msqid_ds msqid_ds_buf;
 
+int MAX_IDLE_INCREMENT = 100001;
 key_t timerKey = 148364;
 key_t pcbArrayKey = 135155;
 key_t resourceKey = 131581;
